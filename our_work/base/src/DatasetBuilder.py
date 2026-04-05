@@ -2,6 +2,7 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 import pandas as pd
 from typing import List, Dict, Any
+from datasets import load_dataset
 
 class MultimodalDatasetFactory:
     def __init__(self, base_path: str):
@@ -84,7 +85,7 @@ class MultimodalUniverseFactory(MultimodalDatasetFactory):
         # Standard columns used across the MMU for joining
         self.primary_keys = ["ra", "dec", "object_id"]
 
-    def load_as_dataframe(self, path: str, subset: str, n_samples: int = 100):
+    def load_as_dataframe(self, path: str, split: str = 'train', n_samples: int = 100):
         """
         Loads a subset of streaming data and flattens it into a clean pandas DataFrame.
 
@@ -106,12 +107,55 @@ class MultimodalUniverseFactory(MultimodalDatasetFactory):
         pd.DataFrame
             A flattened DataFrame with simplified column headers.
         """
-        examples = self.get_streaming_examples(path, n_samples=n_samples)
-        # Flatten the 'weird' nested structure automatically
-        df = pd.json_normalize(examples)
-        # Clean up column names (remove 'image.', 'tabular.' prefixes)
+        raw_examples = self.get_streaming_examples(path, split=split, n_samples=n_samples)
+        
+        # Μετατροπή των Pandas Rows σε Dicts (Η κρίσιμη διόρθωση)
+        clean_dicts = [
+            ex.to_dict('records')[0] if isinstance(ex, pd.DataFrame) else ex 
+            for ex in raw_examples
+        ]
+        
+        # Flattening και καθαρισμός ονομάτων στηλών
+        df = pd.json_normalize(clean_dicts)
         df.columns = [c.split('.')[-1] for c in df.columns]
+        
+        print(f"Successfully created DataFrame with shape: {df.shape}")
         return df
+
+
+    def get_streaming_examples(self, path: str, split: str = 'train', n_samples: int = 4) -> List[Dict[str, Any]]:
+        """
+        Connects to a Hugging Face stream and fetches a small batch of examples.
+        
+        Args:
+            path (str): The HF dataset path (e.g., "MultimodalUniverse/gaia").
+            split (str): Dataset split to use ('train', 'test').
+            n_samples (int): How many objects to fetch.
+            
+        Returns:
+            List[Dict]: A list of dictionaries ready for the Visualizer or DataFrame conversion.
+        """
+        print(f"Opening stream to {path}...")
+        
+        # 1. Load the stream (streaming=True ensures no massive download)
+        ds = load_dataset(path, split=split, streaming=True)
+        
+        # 2. Set format to pandas to handle tabular data easily
+        # Use "numpy" instead if you are strictly handling image tensors
+        ds = ds.with_format("pandas")
+        
+        # 3. Pull n samples
+        examples = []
+        ds_iter = iter(ds)
+        for _ in range(n_samples):
+            try:
+                # next(ds_iter) returns a single-row Pandas DataFrame/Dict
+                examples.append(next(ds_iter))
+            except StopIteration:
+                break
+              
+        print(f"Successfully fetched {len(examples)} examples via stream.")
+        return examples
 
 
     def register_subset(self, modality: str, subset_name: str, metadata: Dict[str, Any]):
@@ -212,4 +256,85 @@ class MultimodalUniverseFactory(MultimodalDatasetFactory):
         return pd.concat([matched, right_data.add_suffix('_secondary')], axis=1)
   
 
+    def _apply_star_filters(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Applies astrophysical quality cuts to a DataFrame batch.
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The raw flattened batch.
 
+        Returns
+        -------
+        pd.DataFrame
+            Cleaned data meeting RUWE and Parallax criteria[cite: 18].
+        """
+        # 1. RUWE Filter: Reject unreliable astrometric solutions
+        if 'ruwe' in df.columns:
+            df = df[df['ruwe'] < 1.4]
+            
+        # 2. Physical Parallax: Ensure distance-based calculations are valid
+        if 'parallax' in df.columns:
+            df = df[df['parallax'] > 0]
+
+        # 3. Completeness: Drop rows missing features required for Absolute Magnitude [cite: 13]
+        df = df.dropna(subset=['phot_g_mean_mag', 'parallax', 'bp_rp'])
+        
+        return df
+
+    def load_filtered_dataset(self, path: str, n_wanted: int = 100, batch_size: int = 50):
+        """
+        Streams data in batches until exactly n_wanted valid samples are collected.
+        
+        Parameters
+        ----------
+        path : str
+            The dataset path (e.g., "MultimodalUniverse/gaia").
+        n_wanted : int
+            The exact number of valid samples required for the final X matrix[cite: 17].
+        batch_size : int
+            Number of samples to fetch per streaming iteration.
+        """
+        final_df = pd.DataFrame()
+        total_fetched = 0
+        
+        print(f"Starting acquisition for {n_wanted} valid stellar samples...")
+
+        # Create a persistent iterator for the stream
+        ds = load_dataset(path, split='train', streaming=True).with_format("pandas")
+        ds_iter = iter(ds)
+
+        while len(final_df) < n_wanted:
+            batch_list = []
+            # Fetch a batch of raw examples
+            for _ in range(batch_size):
+                try:
+                    ex = next(ds_iter)
+                    # Convert single-row DataFrame to dict for normalization
+                    batch_list.append(ex.to_dict('records')[0] if isinstance(ex, pd.DataFrame) else ex)
+                    total_fetched += 1
+                except StopIteration:
+                    break
+            
+            if not batch_list:
+                break
+
+            # Flatten and clean the current batch
+            batch_df = pd.json_normalize(batch_list)
+            batch_df.columns = [c.split('.')[-1] for c in batch_df.columns]
+            
+            # Apply filters BEFORE appending to the final DataFrame [cite: 13]
+            clean_batch = self._apply_star_filters(batch_df)
+            
+            # Append to master and truncate if we exceed n_wanted
+            final_df = pd.concat([final_df, clean_batch], ignore_index=True)
+            
+            if len(final_df) >= n_wanted:
+                final_df = final_df.iloc[:n_wanted]
+                break
+                
+            print(f"Progress: {len(final_df)}/{n_wanted} valid samples collected...")
+
+        print(f"Acquisition complete. Fetched {total_fetched} raw items to get {len(final_df)} valid stars.")
+        return final_df
