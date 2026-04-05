@@ -1,7 +1,7 @@
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 import pandas as pd
-from typing import List, Dict
+from typing import List, Dict, Any
 
 class MultimodalDatasetFactory:
     def __init__(self, base_path: str):
@@ -113,6 +113,61 @@ class MultimodalUniverseFactory(MultimodalDatasetFactory):
         df.columns = [c.split('.')[-1] for c in df.columns]
         return df
 
+
+    def register_subset(self, modality: str, subset_name: str, metadata: Dict[str, Any]):
+        """
+        Indexes a specific data subset into the factory, enabling it for later retrieval.
+        
+        Args:
+            modality (str): The category of data. Supported: 'text', 'image', 
+                'audio', 'video', or 'time_series'.
+            subset_name (str): A unique identifier for the specific dataset 
+                (e.g., 'hubble_ultra_deep' or 'pulsar_timings_v2').
+            metadata (Dict[str, Any]): A dictionary of arbitrary key-value pairs 
+                describing the subset. 
+                *Note*: For 'time_series', metadata MUST include 'sampling_rate_hz' 
+                and 'dimensions'.
+        
+        Raises:
+            ValueError: If the provided 'modality' string is not found in the 
+                supported registry keys.
+            KeyError: If 'time_series' is registered without mandatory temporal 
+                metadata (sampling_rate_hz, dimensions).
+        
+        Side Effects:
+            Updates the internal 'registry' attribute by appending the new subset info.
+        """
+        # 1. Supported Modality Check
+        if modality not in self.registry:
+            raise ValueError(
+                f"Unsupported modality: '{modality}'. "
+                f"Supported types are: {list(self.registry.keys())}"
+            )
+
+        # 2. Strict Schema Validation for Time Series
+        # Logic: We prevent registration if we lack the info to align signals later.
+        if modality == "time_series":
+            required_ts_keys = ["sampling_rate_hz", "dimensions"]
+            for key in required_ts_keys:
+                if key not in metadata:
+                    raise KeyError(
+                        f"Missing critical metadata '{key}' for time_series subset '{subset_name}'. "
+                        "Temporal data requires sampling_rate_hz and dimensions for alignment."
+                    )
+
+        # 3. Create the Entry
+        # We add a timestamp to track when the subset was indexed in your session.
+        entry = {
+            "name": subset_name,
+            "registered_at": pd.Timestamp.now(),
+            **metadata
+        }
+
+        # 4. Update Registry
+        self.registry[modality].append(entry)
+        print(f"Successfully indexed {subset_name} under {modality.upper()}.")
+
+
     def spatial_join(self, df_left, df_right, radius_arcsec=1.0):
         """
         Perform a spatial cross-match between two DataFrames based on sky proximity.
@@ -155,5 +210,6 @@ class MultimodalUniverseFactory(MultimodalDatasetFactory):
         right_data = df_right.iloc[idx[mask]].reset_index(drop=True)
         
         return pd.concat([matched, right_data.add_suffix('_secondary')], axis=1)
+  
 
 
