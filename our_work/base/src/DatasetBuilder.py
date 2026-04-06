@@ -283,51 +283,52 @@ class MultimodalUniverseFactory(MultimodalDatasetFactory):
         
         return df
 
-    def load_filtered_dataset(self, path: str, n_wanted: int = 100, batch_size: int = 50):
+    def load_filtered_dataset(self, path: str, n_wanted: int = 100, batch_size: int = 50, filter_cols: list = None):
         """
-        Streams data in batches until exactly n_wanted valid samples are collected.
-        
-        Parameters
-        ----------
-        path : str
-            The dataset path (e.g., "MultimodalUniverse/gaia").
-        n_wanted : int
-            The exact number of valid samples required for the final X matrix[cite: 17].
-        batch_size : int
-            Number of samples to fetch per streaming iteration.
+        Streams data and uses load_as_dataframe to process batches until 
+        exactly n_wanted valid samples are collected.
         """
-        final_df = pd.DataFrame()
-        total_fetched = 0
-        
-        print(f"Starting acquisition for {n_wanted} valid stellar samples...")
+        if filter_cols is None:
+            filter_cols = ['phot_g_mean_mag', 'parallax', 'bp_rp']
 
-        # Create a persistent iterator for the stream
-        ds = load_dataset(path, split='train', streaming=True).with_format("pandas")
+        final_df = pd.DataFrame()
+        
+        # Χρησιμοποιούμε απευθείας τον iterator των παραδειγμάτων
+        # (Υποθέτοντας ότι η get_streaming_examples επιστρέφει generator/iterator)
+        ds = load_dataset(path, split='train', streaming=True)
         ds_iter = iter(ds)
 
+        print(f"Acquiring {n_wanted} stars with valid data for: {filter_cols}")
+
         while len(final_df) < n_wanted:
-            batch_list = []
-            # Fetch a batch of raw examples
+            batch_raw = []
             for _ in range(batch_size):
                 try:
-                    ex = next(ds_iter)
-                    # Convert single-row DataFrame to dict for normalization
-                    batch_list.append(ex.to_dict('records')[0] if isinstance(ex, pd.DataFrame) else ex)
-                    total_fetched += 1
+                    batch_raw.append(next(ds_iter))
                 except StopIteration:
                     break
             
-            if not batch_list:
+            if not batch_raw:
                 break
 
-            # Flatten and clean the current batch
-            batch_df = pd.json_normalize(batch_list)
+            # --- Επαναχρησιμοποίηση της load_as_dataframe Logic ---
+            # Μετατρέπουμε το batch σε DataFrame χρησιμοποιώντας την υπάρχουσα λογική flattening
+            clean_dicts = [
+                ex.to_dict('records')[0] if isinstance(ex, pd.DataFrame) else ex 
+                for ex in batch_raw
+            ]
+            batch_df = pd.json_normalize(clean_dicts)
             batch_df.columns = [c.split('.')[-1] for c in batch_df.columns]
             
-            # Apply filters BEFORE appending to the final DataFrame [cite: 13]
-            clean_batch = self._apply_star_filters(batch_df)
+            # --- Εφαρμογή Φίλτρων ---
+            # 1. Listwise deletion μόνο για τις κρίσιμες μεταβλητές
+            clean_batch = batch_df.dropna(subset=filter_cols)
             
-            # Append to master and truncate if we exceed n_wanted
+            # 2. Φυσικοί περιορισμοί (π.χ. parallax > 0)
+            if 'parallax' in clean_batch.columns:
+                clean_batch = clean_batch[clean_batch['parallax'] > 0]
+
+            # Προσθήκη στο κύριο DataFrame
             final_df = pd.concat([final_df, clean_batch], ignore_index=True)
             
             if len(final_df) >= n_wanted:
@@ -336,5 +337,4 @@ class MultimodalUniverseFactory(MultimodalDatasetFactory):
                 
             print(f"Progress: {len(final_df)}/{n_wanted} valid samples collected...")
 
-        print(f"Acquisition complete. Fetched {total_fetched} raw items to get {len(final_df)} valid stars.")
         return final_df
