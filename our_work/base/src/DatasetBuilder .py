@@ -263,7 +263,7 @@ class MultimodalUniverseFactory(MultimodalDatasetFactory):
     until the target sample size is validated.
     """
     if filter_names is None:
-        filter_names = ['_apply_star_filters', '_filter_completeness','_apply_star_filters']
+        filter_names = ['_apply_star_filters', '_filter_completeness']
 
     final_df = pd.DataFrame()
     ds = load_dataset(path, split='train', streaming=True)
@@ -350,21 +350,3 @@ class MultimodalUniverseFactory(MultimodalDatasetFactory):
           df = df.dropna(subset=['phot_g_mean_mag', 'parallax', 'bp_rp'])
           
           return df
-
-  def _filter_outliers(self, df: pd.DataFrame, cols: list = ["abs_mag"]) -> pd.DataFrame:
-    """Removes rows where specified columns contain values outside 1.5 * IQR."""
-    # Ensure columns exist in the current batch before filtering
-    valid_cols = [c for c in cols if c in df.columns]
-    if not valid_cols:
-        return df
-
-    mask = pd.Series(True, index=df.index)
-    for col in valid_cols:
-        Q1 = df[col].quantile(0.25)
-        Q3 = df[col].quantile(0.75)
-        IQR = Q3 - Q1
-        lower_bound = Q1 - 1.5 * IQR
-        upper_bound = Q3 + 1.5 * IQR
-        mask &= (df[col] >= lower_bound) & (df[col] <= upper_bound)
-    
-    return df[mask]
