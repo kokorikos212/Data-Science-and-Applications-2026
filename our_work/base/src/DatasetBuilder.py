@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np 
 from typing import List, Dict, Any
 from datasets import load_dataset
+import os 
 
 class MultimodalDatasetFactory:
     def __init__(self, base_path: str):
@@ -257,47 +258,64 @@ class MultimodalUniverseFactory(MultimodalDatasetFactory):
       return pd.concat([matched, right_data.add_suffix('_secondary')], axis=1)
 
 
-  def load_validated_dataset(self, path: str, n_wanted: int = 100, batch_size: int = 50, filter_names: list = None):
+  def load_validated_dataset(self, path: str, n_wanted: int = 100, batch_size: int = 50, 
+                           filter_names: list = None, required_vars: list = None):
     """
-    Streams Gaia data and applies registered class filters by name 
-    until the target sample size is validated.
+    Streams Gaia data, applies filters, and ensures required variables exist and are non-NaN.
+
+    Args:
+        path (str): The Hugging Face or local path to the Gaia dataset.
+        n_wanted (int): Target number of validated samples to collect.
+        batch_size (int): Number of records to pull in each streaming iteration.
+        filter_names (list, optional): List of method names to apply as filters.
+        required_vars (list, optional): Columns that must exist and contain non-NaN values.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing n_wanted validated stellar records.
     """
     if filter_names is None:
-        filter_names = ['_apply_star_filters', '_filter_completeness','_apply_star_filters']
+        filter_names = ['_apply_star_filters', '_filter_completeness', '_filter_outliers']
+    
+    if required_vars is None:
+        required_vars = ['phot_g_mean_mag', 'parallax']
 
     final_df = pd.DataFrame()
     ds = load_dataset(path, split='train', streaming=True)
     ds_iter = iter(ds)
 
     while len(final_df) < n_wanted:
-        # Fetch raw batch
         batch_raw = []
         for _ in range(batch_size):
             try:
                 batch_raw.append(next(ds_iter))
             except StopIteration:
                 break
-        if not batch_raw: break
+        if not batch_raw:
+            break
 
-        # Use the internal logic of load_as_dataframe to flatten
         clean_dicts = [ex.to_dict('records')[0] if isinstance(ex, pd.DataFrame) else ex for ex in batch_raw]
         batch_df = pd.json_normalize(clean_dicts)
         batch_df.columns = [c.split('.')[-1] for c in batch_df.columns]
         
-        # Apply registered filters by name
         validated_batch = batch_df
         for method_name in filter_names:
             filter_func = getattr(self, method_name)
             validated_batch = filter_func(validated_batch)
 
-        # Build the final clean matrix X
+        # Validation Logic: Ensure required columns exist and drop NaNs
+        existing_required = [c for c in required_vars if c in validated_batch.columns]
+        validated_batch = validated_batch.dropna(subset=existing_required)
+
         final_df = pd.concat([final_df, validated_batch], ignore_index=True)
+        
         if len(final_df) >= n_wanted:
             final_df = final_df.iloc[:n_wanted].copy()
             break
             
-    # Compute Absolute Magnitude (y) target
+    # Calculate target variable with safety mask for parallax
+    final_df = final_df[final_df['parallax'] > 0].copy()
     final_df['abs_mag'] = final_df['phot_g_mean_mag'] + 5 + 5 * np.log10(final_df['parallax'] / 1000.0)
+    
     return final_df
   
   def _filter_completeness(self, df: pd.DataFrame, required_vars: list = None) -> pd.DataFrame:
