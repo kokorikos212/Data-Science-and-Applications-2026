@@ -1,1 +1,26 @@
-GaiaStellarNet: Multi-Modal Stellar AnalysisThis project implements a data-driven pipeline for analyzing Gaia mission data. It combines custom streaming architectures, deep learning, and robust statistical models to predict stellar properties, specifically Absolute Magnitude ($M_G$), using multi-modal astronomical features.## Core FeaturesStreaming Data Factory: Efficiently pulls data from Hugging Face streams, enabling the processing of massive astronomical datasets without high memory overhead.Integrity-First Pipeline: Includes automated filters for physical completeness, handling the "Log of Zero" parallax traps and removing corrupted (NaN) entries.Multi-Modal Architecture:Neural Network: A PyTorch-based DataDrivenStellarNet for non-linear regression.Random Forest: A robust ensemble model for high-accuracy tabular prediction.PCA Integration: Dimensionality reduction (PC1, PC2) to blend auxiliary modalities into a unified feature set.Visualization Suite: Automated generation of Double HR Diagrams to compare ground truth Gaia observations against model predictions.## Project StructureDataFactory: The engine for streaming, flattening, and validating datasets.StellarModels: Contains the PyTorch neural network architecture and Random Forest implementation.Preprocessing: Custom logic for Principal Component Analysis and standard scaling of astronomical units.Evaluation: Tools for calculating $R^2$ scores, MSE, and generating Hertzsprung-Russell diagrams.
+# GaiaStellarNet: Multi-Modal Stellar Analysis
+
+This project implements a data-driven pipeline for analyzing **Gaia mission data**. It combines custom streaming architectures, statistical learning, and robust validation to predict stellar properties—specifically **Absolute Magnitude ($M_G$)**—using multi-modal astronomical features.
+
+---
+
+## 🚀 Key Capabilities
+
+* **Streaming Data Factory:** Efficiently pulls data from Hugging Face streams, enabling the processing of massive astronomical datasets without high memory overhead.
+* **Integrity-First Pipeline:** Automated filters for physical completeness, handling the "Log of Zero" parallax traps and stripping corrupted (NaN) entries.
+* **Hybrid Modeling Suite:**
+    * **Neural Networks:** PyTorch-based regression for complex pattern recognition.
+    * **Random Forests:** High-accuracy ensemble models for tabular data.
+    * **PCA Integration:** Dimensionality reduction to compress auxiliary modalities into unified feature sets.
+* **Scientific Visualization:** Automated generation of **Double HR Diagrams** to compare ground truth Gaia observations against model predictions.
+
+---
+
+## 📂 Project Structure
+
+| Component | Responsibility |
+| :--- | :--- |
+| **DataFactory** | The engine for streaming, flattening, and validating datasets. |
+| **StellarModels** | Architecture definitions for PyTorch and Scikit-Learn estimators. |
+| **Preprocessing** | Logic for Principal Component Analysis (PCA) and standard scaling. |
+| **Evaluation** | Tools for calculating $R^2$, MSE, and generating Hertzsprung-Russell diagrams. |
