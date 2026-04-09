@@ -16,11 +16,11 @@ This project implements a data-driven pipeline for analyzing **Gaia mission data
 
 ---
 
-## 📂 Project Structure
+# 📂 Project Structure
 
 | Component | Responsibility |
 | :--- | :--- |
-| **DataFactory** | The engine for streaming, flattening, and validating datasets. |
-| **StellarModels** | Architecture definitions for PyTorch and Scikit-Learn estimators. |
-| **Preprocessing** | Logic for Principal Component Analysis (PCA) and standard scaling. |
-| **Evaluation** | Tools for calculating $R^2$, MSE, and generating Hertzsprung-Russell diagrams. |
+| **DataFactory** | A multimodal engine that manages and joins astronomical datasets via streaming; handles structured DataFrame conversion and spatial cross-matches using celestial coordinates. |
+| **ExploratoryAnalyzer** | Computes similarity matrices and descriptive statistics to quantify the relationships within the stellar data matrix. |
+| **FeatureEngineer** | Implements likelihood scoring based on 1D probability distributions (PDFs) for stellar properties like Color and Extent. |
+| **UniverseVisualizer** | A dedicated suite for analyzing the statistical distributions and composition of the multimodal universe manifest. |
