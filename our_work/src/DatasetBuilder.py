@@ -213,6 +213,30 @@ class MultimodalUniverseFactory(MultimodalDatasetFactory):
       self.registry[modality].append(entry)
       print(f"Successfully indexed {subset_name} under {modality.upper()}.")
 
+  def fetch_multimodal_data(self, object_ids: list, target_modality: str):
+    """
+    Retrieves data for specific object IDs in a different modality using the registry.
+    
+    Args:
+        object_ids (list): List of unique identifiers (e.g., Gaia source_ids).
+        target_modality (str): The desired modality (e.g., 'image' for spectra).
+        
+    Returns:
+        pd.DataFrame: A joined dataframe containing the requested multimodal data.
+    """
+    if target_modality not in self.registry or not self.registry[target_modality]:
+        raise ValueError(f"No subsets registered under modality: {target_modality}")
+
+    # 1. Εντοπισμός του σωστού subset από το registry
+    # Εδώ υποθέτουμε ότι παίρνουμε το πιο πρόσφατα εγγεγραμμένο subset
+    subset_info = self.registry[target_modality][-1]
+    path = subset_info.get("path") # Το path πρέπει να υπάρχει στα metadata
+
+    target_ds = load_dataset(path, split='train') 
+    target_df = target_ds.to_pandas()
+    filtered_df = target_df[target_df['source_id'].isin(object_ids)]
+    
+    return filtered_df
 
   def spatial_join(self, df_left, df_right, radius_arcsec=1.0):
       """
